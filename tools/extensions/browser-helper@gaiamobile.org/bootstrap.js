@@ -172,7 +172,13 @@ function startup(data, reason) {
       // And devtool panel while maximizing its size according to screen size
       Services.prefs.setIntPref('devtools.toolbox.sidebar.width',
                                 browserWindow.outerWidth - 550);
-      gDevToolsBrowser.selectToolCommand(browserWindow.gBrowser);
+
+      // Load code that will display app specific devtool toolboxes
+      try {
+        Cu.import("chrome://browser-helper.js/content/app-tools.jsm");
+      }catch(e) {
+        Cu.reportError('Error while loader app tools: '+ e );
+      }
 
       // XXX This code should be loaded by the keyboard/ extension
       try {
