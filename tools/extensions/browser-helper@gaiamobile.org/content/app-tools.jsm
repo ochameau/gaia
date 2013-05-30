@@ -43,41 +43,60 @@ function AppsActor(aConnection) {
   this._appsActorPool = new ActorPool(aConnection);
   aConnection.addActorPool(this._appsActorPool);
   let browserWindow = Services.wm.getMostRecentWindow('navigator:browser');
-  let systemAppScope = browserWindow.content;
-  systemAppScope.addEventListener("appwillopen", function (event) {
-    let origin = event.detail.origin;
-    Cu.reportError("Appwillopen: " + origin);
-    // First ensure that we do not already have an actor for this app
-    let actor = self.getActorWithOrigin(origin);
-    if (!actor) {
-      // Otherwise, create an actor for the current app
-      let appScope = event.target.contentWindow;
-      // appScope is an unwrapped version of app global object
-      // but devtools code expect to have an xray
-      appScope = XPCNativeWrapper(appScope);
-      actor = new AppActor(self.conn, appScope, origin);
-      self._appsActorPool.addActor(actor);
+  function watchDocument(window) {
+    Cu.reportError("##################### Watch > "+window+" / "+window.location);
+    if (window.wrappedJSObject)
+      window = window.wrappedJSObject;
+    window.addEventListener("appwillopen", function (event) {
+      Cu.reportError("##################### FOREGROUND");
+      let origin = event.detail.origin;
+      Cu.reportError("Appwillopen: " + origin + "/"+event.target+"/"+event.target.contentWindow+"/"+event.target.contentWindow.location);
+      // First ensure that we do not already have an actor for this app
+      let actor = self.getActorWithOrigin(origin);
+      if (!actor) {
+        // Otherwise, create an actor for the current app
+        // We should pass the <iframe> in order to avoid trigering bug 863818's workaround :/
+        actor = new AppActor(self.conn, event.target, origin);
+        self._appsActorPool.addActor(actor);
+      }
+      self.conn.send({ from: self.actorID,
+                       type: "webappsOpen",
+                       actor: actor.grip(),
+                       origin: origin
+                     });
+    });
+    window.addEventListener("appopen", function (event) {
+      let origin = event.detail.origin;
+      Cu.reportError("Appopen: "+origin);
+    });
+    window.addEventListener("appterminated", function (event) {
+      let origin = event.detail.origin;
+      let actor = self.getActorWithOrigin(origin);
+      if (actor) {
+        self._appsActorPool.removeActor(actor);
+      }
+      let toolbox = toolboxes.get(origin);
+      if (toolbox)
+        toobox.destroy();
+    });
+  }
+  
+  function watchBrowser(browser) {
+    Cu.reportError("######### set listener on:" + browser.tagName);
+    function onContentLoad(event) {
+      Cu.reportError("######### Oncontentload");
+      let window = event.target;
+      watchDocument(window);
     }
-    self.conn.send({ from: self.actorID,
-                     type: "webappsOpen",
-                     actor: actor.grip(),
-                     origin: origin
-                   });
+    browser.addEventListener("DOMContentLoaded", onContentLoad, true);
+    if (browser.contentWindow.document.readyState == "complete")
+      watchDocument(browser.contentWindow);
+  }
+  browserWindow.addEventListener("TabOpen", function (event) {
+    let tab = event.target;
+    watchBrowser(tab.linkedBrowser);
   });
-  systemAppScope.addEventListener("appopen", function (event) {
-    let origin = event.detail.origin;
-    Cu.reportError("Appopen: "+origin);
-  });
-  systemAppScope.addEventListener("appterminated", function (event) {
-    let origin = event.detail.origin;
-    let actor = self.getActorWithOrigin(origin);
-    if (actor) {
-      self._appsActorPool.removeActor(actor);
-    }
-    let toolbox = toolboxes.get(origin);
-    if (toolbox)
-      toobox.destroy();
-  });
+  watchBrowser(browserWindow.gBrowser.mCurrentBrowser);
 }
 AppsActor.prototype = {
   actorID: "apps",
@@ -114,21 +133,21 @@ function AppActor(connection, browser, origin) {
 AppActor.prototype = new BrowserTabActor();
 Object.defineProperty(AppActor.prototype, "title", {
   get: function() {
-    return this.browser.title;
+    return this.browser.contentWindow.title;
   },
   enumerable: true,
   configurable: false
 });
 Object.defineProperty(AppActor.prototype, "url", {
   get: function() {
-    return this.browser.document.documentURI;
+    return this.browser.contentWindow.document.documentURI;
   },
   enumerable: true,
   configurable: false
 });
 Object.defineProperty(AppActor.prototype, "contentWindow", {
   get: function() {
-    return this.browser;
+    return this.browser.contentWindow;
   },
   enumerable: true,
   configurable: false
@@ -152,6 +171,7 @@ client.connect(function () {
 let toolboxes = new Map();
 let currentToolbox;
 client.addListener("webappsOpen", function(aState, aType, aPacket) {
+  Cu.reportError("webappsOpen "+aType.origin);
   if (currentToolbox) {
     currentToolbox.frame.style.display = "none";
   }
@@ -160,6 +180,8 @@ client.addListener("webappsOpen", function(aState, aType, aPacket) {
     toolbox.frame.style.display = "block";
     currentToolbox = toolbox;
   } else {
+    Cu.reportError("#### CREATE TOOLBOX for "+aType.origin);
+    Cu.reportError("### "+aType.actor);
     let options = {
       form: aType.actor,
       client: client,
