@@ -195,6 +195,10 @@ WebappZip.prototype.execute = function(options) {
 
   this.setOptions(options);
 
+  var fullTargetPath = this.webapp.profileDirectoryFile.path;
+  utils.copyDirTo(this.buildDir, utils.dirname(fullTargetPath),
+        utils.basename(fullTargetPath), true);
+  return;
   var files = utils.ls(this.buildDir, true);
   files.forEach(this.addToZip.bind(this));
 

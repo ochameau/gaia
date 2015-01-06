@@ -140,7 +140,8 @@ ManifestBuilder.prototype.fillExternalAppManifest = function(webapp) {
     etag: etag,
     packageEtag: packageEtag,
     appStatus: webapp.appStatus,
-    webappTargetDirName: webappTargetDirName
+    webappTargetDirName: webappTargetDirName,
+    hasApplicationZip: false
   };
 };
 
@@ -170,7 +171,8 @@ ManifestBuilder.prototype.fillAppManifest = function(webapp) {
     updateTime: this.UPDATE_TIME,
     localId: this.id++,
     appStatus: webapp.appStatus,
-    webappTargetDirName: webapp.domain
+    webappTargetDirName: webapp.domain,
+    hasApplicationZip: false
   };
 };
 
